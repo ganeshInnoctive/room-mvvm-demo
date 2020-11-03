@@ -1,8 +1,10 @@
 package com.example.roomdemo
 
 import android.text.TextUtils
+import android.util.Patterns
 import androidx.databinding.Bindable
 import androidx.databinding.Observable
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +29,11 @@ class SubscriberViewModel(private val repository: SubscriberRepository) : ViewMo
     @Bindable
     val clearAllOrDeleteButtonText = MutableLiveData<String>()
 
+    private val statusMessage = MutableLiveData<Event<String>>()
+
+    val message: LiveData<Event<String>>
+        get() = statusMessage
+
     init {
         saveOrUpdateButtonText.value = "Save"
         clearAllOrDeleteButtonText.value = "Clear All"
@@ -42,15 +49,21 @@ class SubscriberViewModel(private val repository: SubscriberRepository) : ViewMo
     }
 
     fun saveOrUpdate() {
-        if (isUpdateOrDelete) {
-            subscriberToUpdateOrDelete.subscriberName = inputName.value!!
-            subscriberToUpdateOrDelete.subscriberEmail = inputEmail.value!!
-            update(subscriberToUpdateOrDelete)
+        if (TextUtils.isEmpty(inputName.value)) {
+            statusMessage.value = Event("Subscriber name is mandatory")
+        } else if (TextUtils.isEmpty(inputEmail.value)) {
+            statusMessage.value = Event("Subscriber email is mandatory")
+        } else if (!Patterns.EMAIL_ADDRESS.matcher(inputEmail.value!!).matches()) {
+            statusMessage.value = Event("Subscriber email is invalid")
         } else {
-            val name = inputName.value!!
-            val email = inputEmail.value!!
+            if (isUpdateOrDelete) {
+                subscriberToUpdateOrDelete.subscriberName = inputName.value!!
+                subscriberToUpdateOrDelete.subscriberEmail = inputEmail.value!!
+                update(subscriberToUpdateOrDelete)
+            } else {
+                val name = inputName.value!!
+                val email = inputEmail.value!!
 
-            if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(email)) {
                 insert(Subscriber(0, name, email))
                 inputName.value = null
                 inputEmail.value = null
@@ -67,31 +80,54 @@ class SubscriberViewModel(private val repository: SubscriberRepository) : ViewMo
     }
 
     private fun insert(subscriber: Subscriber) = viewModelScope.launch {
-        repository.insert(subscriber)
+        val newRowId = repository.insert(subscriber)
+        if (newRowId > -1) {
+            statusMessage.value = Event("Subscriber Inserted Successfully $newRowId")
+        } else {
+            statusMessage.value = Event("Error occurred during insertion")
+        }
     }
 
     private fun update(subscriber: Subscriber) = viewModelScope.launch {
-        repository.update(subscriber)
-        inputName.value = null
-        inputEmail.value = null
-        isUpdateOrDelete = false
-        subscriberToUpdateOrDelete = subscriber
-        saveOrUpdateButtonText.value = "Save"
-        clearAllOrDeleteButtonText.value = "Clear All"
+        val noOfRowsUpdated = repository.update(subscriber)
+
+        if (noOfRowsUpdated > 0) {
+            inputName.value = null
+            inputEmail.value = null
+            isUpdateOrDelete = false
+            subscriberToUpdateOrDelete = subscriber
+            saveOrUpdateButtonText.value = "Save"
+            clearAllOrDeleteButtonText.value = "Clear All"
+            statusMessage.value = Event("$noOfRowsUpdated Rows Updated Successfully")
+        } else {
+            statusMessage.value = Event("Error occurred while updating data")
+        }
     }
 
     private fun delete(subscriber: Subscriber) = viewModelScope.launch {
-        repository.delete(subscriber)
-        inputName.value = null
-        inputEmail.value = null
-        isUpdateOrDelete = false
-        subscriberToUpdateOrDelete = subscriber
-        saveOrUpdateButtonText.value = "Save"
-        clearAllOrDeleteButtonText.value = "Clear All"
+        val rowsDeleted = repository.delete(subscriber)
+
+        if (rowsDeleted > 0) {
+            inputName.value = null
+            inputEmail.value = null
+            isUpdateOrDelete = false
+            subscriberToUpdateOrDelete = subscriber
+            saveOrUpdateButtonText.value = "Save"
+            clearAllOrDeleteButtonText.value = "Clear All"
+            statusMessage.value = Event("$rowsDeleted Deleted Successfully")
+        } else {
+            statusMessage.value = Event("Error occurred while deleting data")
+        }
     }
 
     private fun deleteAll() = viewModelScope.launch {
-        repository.deleteAll()
+        val rowsDeleted = repository.deleteAll()
+
+        if (rowsDeleted > 0) {
+            statusMessage.value = Event("$rowsDeleted rows Deleted Successfully")
+        } else {
+            statusMessage.value = Event("Error occurred while deleting all data")
+        }
     }
 
     override fun addOnPropertyChangedCallback(callback: Observable.OnPropertyChangedCallback?) {
